@@ -16,11 +16,13 @@ const fetchContacts = async (): Promise<Contact[]> => {
 
 
 const addContact = async (contact: Omit<Contact, "id">): Promise<Contact> => {
-  return { id: Math.floor(Math.random() * 10000), ...contact };
+  const { data } = await axios.post("https://jsonplaceholder.typicode.com/users", contact);
+  return data;
 };
 
 
 const deleteContact = async (id: number): Promise<number> => {
+  await axios.delete(`https://jsonplaceholder.typicode.com/users/${id}`);
   return id;
 };
 
@@ -28,63 +30,37 @@ const ContactList: React.FC = () => {
   const [form, setForm] = useState({ name: "", phone: "" });
   const queryClient = useQueryClient();
 
- 
   const { data: contacts = [], isLoading, isError } = useQuery<Contact[], Error>({
     queryKey: ["contacts"],
     queryFn: fetchContacts,
-    staleTime: Infinity, 
+    staleTime: Infinity,
   });
 
 
-  interface MutationContext {
-    previousContacts: Contact[];
-  }
-
-  const addMutation = useMutation<Contact, Error, Omit<Contact, "id">, MutationContext>({
+  const addMutation = useMutation<Contact, Error, Omit<Contact, "id">>({
     mutationFn: addContact,
-    onMutate: async (newContact) => {
-      await queryClient.cancelQueries({ queryKey: ["contacts"] });
-
-      const previousContacts = queryClient.getQueryData<Contact[]>(["contacts"]) || [];
-
-     
-      const newFakeContact: Contact = { id: Date.now(), ...newContact };
-      queryClient.setQueryData<Contact[]>(["contacts"], [...previousContacts, newFakeContact]);
-
-      return { previousContacts };
-    },
-    onError: (_error, _newContact, context) => {
-      if (context?.previousContacts) {
-        queryClient.setQueryData(["contacts"], context.previousContacts);
-      }
-    },
-  });
-
- 
-  const deleteMutation = useMutation<number, Error, number, MutationContext>({
-    mutationFn: deleteContact,
-    onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["contacts"] });
-
-      const previousContacts = queryClient.getQueryData<Contact[]>(["contacts"]) || [];
-
-      queryClient.setQueryData<Contact[]>(["contacts"], previousContacts.filter((contact) => contact.id !== id));
-
-      return { previousContacts };
-    },
-    onError: (_error, _id, context) => {
-      if (context?.previousContacts) {
-        queryClient.setQueryData(["contacts"], context.previousContacts);
-      }
+    onSuccess: (newContact) => {
+      
+      queryClient.setQueryData<Contact[]>(["contacts"], (oldContacts = []) => [...oldContacts, newContact]);
     },
   });
 
   
+  const deleteMutation = useMutation<number, Error, number>({
+    mutationFn: deleteContact,
+    onSuccess: (id) => {
+     
+      queryClient.setQueryData<Contact[]>(["contacts"], (oldContacts = []) =>
+        oldContacts.filter((contact) => contact.id !== id)
+      );
+    },
+  });
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
- 
+
   const handleAdd = () => {
     if (!form.name || !form.phone) return;
     addMutation.mutate(form);
@@ -93,7 +69,7 @@ const ContactList: React.FC = () => {
 
   return (
     <div>
-      <h2> Contact Numbers</h2>
+      <h2>Contact Numbers</h2>
 
       {isLoading && <p>Loading...</p>}
       {isError && <p>Error loading contacts</p>}
